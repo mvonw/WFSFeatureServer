@@ -56,6 +56,11 @@
         </ows:AllowedValues>
       </ows:Parameter>
     </ows:Operation>
+    <ows:Operation name="Transaction">
+      <ows:DCP><ows:HTTP>
+        <ows:Post xlink:href="{{ service_url }}"/>
+      </ows:HTTP></ows:DCP>
+    </ows:Operation>
   </ows:OperationsMetadata>
 
   <wfs:FeatureTypeList>

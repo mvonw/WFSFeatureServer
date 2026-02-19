@@ -1,10 +1,12 @@
 """
-Geometry utilities: WKB encode/decode, bbox extraction, GML 3.2 serialization,
-CRS reprojection via pyproj.
+Geometry utilities: WKB encode/decode, bbox extraction, GML 3.2 serialization
+and parsing, CRS reprojection via pyproj.
 """
 from __future__ import annotations
 
 import json
+import re
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import shapely.geometry
@@ -12,6 +14,8 @@ import shapely.ops
 import shapely.wkb
 from shapely.geometry.base import BaseGeometry
 from pyproj import Transformer, CRS
+
+_GML_NS = "http://www.opengis.net/gml/3.2"
 
 
 # ── CRS / reprojection ────────────────────────────────────────────────────────
@@ -130,6 +134,129 @@ def _multi_gml(geom: BaseGeometry, srs: str, swap: bool, tag: str, member_tag: s
         for g in geom.geoms
     )
     return f'<gml:{tag} srsName="{srs}">{members}</gml:{tag}>'
+
+
+# ── GML 3.2 parsing (inverse of serialization) ───────────────────────────────
+
+def _gml_tag(local: str) -> str:
+    """Return fully-qualified GML 3.2 tag."""
+    return f"{{{_GML_NS}}}{local}"
+
+
+def _parse_srs(elem: ET.Element) -> tuple[int, bool]:
+    """Extract SRID and whether axis swap is needed from srsName attribute.
+    Returns (srid, swap). Defaults to (4326, True) if no srsName found."""
+    srs = elem.get("srsName", "")
+    m = re.search(r"EPSG::(\d+)", srs)
+    srid = int(m.group(1)) if m else 4326
+    swap = (srid == 4326)
+    return srid, swap
+
+
+def _parse_pos(text: str, swap: bool) -> tuple[float, float]:
+    """Parse a gml:pos string into (x, y), handling axis swap."""
+    parts = text.strip().split()
+    a, b = float(parts[0]), float(parts[1])
+    return (b, a) if swap else (a, b)
+
+
+def _parse_poslist(text: str, swap: bool) -> list[tuple[float, float]]:
+    """Parse a gml:posList string into a list of (x, y) tuples."""
+    parts = text.strip().split()
+    coords = []
+    for i in range(0, len(parts), 2):
+        a, b = float(parts[i]), float(parts[i + 1])
+        coords.append((b, a) if swap else (a, b))
+    return coords
+
+
+def _find_text(elem: ET.Element, local: str) -> str:
+    """Find a GML child element and return its text content."""
+    child = elem.find(_gml_tag(local))
+    if child is None or child.text is None:
+        raise ValueError(f"Missing <gml:{local}> element")
+    return child.text
+
+
+def _parse_point(elem: ET.Element, swap: bool) -> BaseGeometry:
+    pos_text = _find_text(elem, "pos")
+    x, y = _parse_pos(pos_text, swap)
+    return shapely.geometry.Point(x, y)
+
+
+def _parse_linestring(elem: ET.Element, swap: bool) -> BaseGeometry:
+    poslist_text = _find_text(elem, "posList")
+    coords = _parse_poslist(poslist_text, swap)
+    return shapely.geometry.LineString(coords)
+
+
+def _parse_linearring(elem: ET.Element, swap: bool) -> list[tuple[float, float]]:
+    poslist_text = _find_text(elem, "posList")
+    return _parse_poslist(poslist_text, swap)
+
+
+def _parse_polygon(elem: ET.Element, swap: bool) -> BaseGeometry:
+    exterior_elem = elem.find(_gml_tag("exterior"))
+    if exterior_elem is None:
+        raise ValueError("Polygon missing <gml:exterior>")
+    ring_elem = exterior_elem.find(_gml_tag("LinearRing"))
+    if ring_elem is None:
+        raise ValueError("Polygon exterior missing <gml:LinearRing>")
+    exterior = _parse_linearring(ring_elem, swap)
+
+    holes = []
+    for interior_elem in elem.findall(_gml_tag("interior")):
+        ring = interior_elem.find(_gml_tag("LinearRing"))
+        if ring is not None:
+            holes.append(_parse_linearring(ring, swap))
+
+    return shapely.geometry.Polygon(exterior, holes)
+
+
+def _parse_multi(elem: ET.Element, swap: bool, member_tag: str, part_fn) -> list:
+    parts = []
+    for member in elem.findall(_gml_tag(member_tag)):
+        child = list(member)
+        if child:
+            parts.append(part_fn(child[0], swap))
+    return parts
+
+
+def _parse_gml_element(elem: ET.Element, swap: bool) -> BaseGeometry:
+    """Parse a single GML geometry element to a Shapely geometry."""
+    local = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+
+    if local == "Point":
+        return _parse_point(elem, swap)
+    elif local == "LineString":
+        return _parse_linestring(elem, swap)
+    elif local == "Polygon":
+        return _parse_polygon(elem, swap)
+    elif local == "MultiPoint":
+        points = _parse_multi(elem, swap, "pointMember", _parse_point)
+        return shapely.geometry.MultiPoint(points)
+    elif local == "MultiCurve":
+        lines = _parse_multi(elem, swap, "curveMember", _parse_linestring)
+        return shapely.geometry.MultiLineString(lines)
+    elif local == "MultiSurface":
+        polys = _parse_multi(elem, swap, "surfaceMember", _parse_polygon)
+        return shapely.geometry.MultiPolygon(polys)
+    elif local == "MultiGeometry":
+        geoms = _parse_multi(elem, swap, "geometryMember", _parse_gml_element)
+        return shapely.geometry.GeometryCollection(geoms)
+    else:
+        raise ValueError(f"Unsupported GML geometry type: {local}")
+
+
+def gml32_to_geom(elem: ET.Element) -> tuple[BaseGeometry, int]:
+    """Parse a GML 3.2 geometry element into a Shapely geometry.
+
+    Returns (geometry, srid) where srid is extracted from srsName.
+    EPSG:4326 axis order (lat,lon) is automatically swapped to (lon,lat).
+    """
+    srid, swap = _parse_srs(elem)
+    geom = _parse_gml_element(elem, swap)
+    return geom, srid
 
 
 # ── Attribute type inference ───────────────────────────────────────────────────

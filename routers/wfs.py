@@ -1,19 +1,19 @@
 """
 OGC WFS 2.0.0 endpoint.
-Handles KVP (Key-Value Pair) GET requests for:
-  GetCapabilities, DescribeFeatureType, GetFeature
+Handles KVP (Key-Value Pair) GET/POST requests for:
+  GetCapabilities, DescribeFeatureType, GetFeature, Transaction (WFS-T)
 """
 from __future__ import annotations
 
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from config import settings
 from database import get_db
-from services import wfs_service
+from services import wfs_service, transaction_service
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ _XML_CONTENT_TYPE = "application/xml; charset=UTF-8"
 @router.get("/wfs")
 @router.post("/wfs")
 async def wfs_endpoint(
+    raw_request: Request,
     SERVICE: Optional[str] = Query(default=None),
     service: Optional[str] = Query(default=None),
     VERSION: Optional[str] = Query(default=None),
@@ -55,6 +56,15 @@ async def wfs_endpoint(
     output_fmt = OUTPUTFORMAT or outputFormat or outputformat or ""
 
     req_upper = req.upper()
+
+    # Handle XML POST body for Transaction requests
+    if raw_request.method == "POST" and (req_upper == "TRANSACTION" or req_upper == ""):
+        content_type = (raw_request.headers.get("content-type") or "").lower()
+        if "xml" in content_type or req_upper == "TRANSACTION":
+            body = await raw_request.body()
+            if body and (req_upper == "TRANSACTION" or b"Transaction" in body):
+                xml = transaction_service.execute_transaction(body, db)
+                return Response(content=xml, media_type=_XML_CONTENT_TYPE)
 
     if req_upper == "GETCAPABILITIES" or req == "":
         xml = wfs_service.build_capabilities(db)
@@ -92,10 +102,13 @@ async def wfs_endpoint(
             )
             return Response(content=gml, media_type=_GML_CONTENT_TYPE)
 
+    elif req_upper == "TRANSACTION":
+        raise HTTPException(status_code=400, detail="Transaction requires XML POST body")
+
     else:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown REQUEST: '{req}'. Supported: GetCapabilities, DescribeFeatureType, GetFeature",
+            detail=f"Unknown REQUEST: '{req}'. Supported: GetCapabilities, DescribeFeatureType, GetFeature, Transaction",
         )
 
 
