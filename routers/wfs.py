@@ -113,11 +113,24 @@ async def wfs_endpoint(
 
 
 def _parse_bbox(bbox_str: str) -> tuple[float, float, float, float]:
-    """Parse 'minx,miny,maxx,maxy[,CRS]' string."""
+    """Parse 'minx,miny,maxx,maxy[,CRS]' string.
+
+    WFS 2.0.0: when the CRS suffix indicates EPSG:4326 (lat/lon axis order),
+    the values arrive as minLat,minLon,maxLat,maxLon — swap to minx,miny,maxx,maxy.
+    """
     parts = bbox_str.split(",")
     if len(parts) < 4:
         raise HTTPException(status_code=400, detail=f"Invalid BBOX: '{bbox_str}'")
     try:
-        return float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+        v0, v1, v2, v3 = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
     except ValueError:
         raise HTTPException(status_code=400, detail=f"BBOX values must be numeric: '{bbox_str}'")
+
+    # If a CRS is appended, check for EPSG:4326 axis swap (lat/lon → lon/lat)
+    if len(parts) >= 5:
+        crs = parts[4].strip()
+        if "4326" in crs and ("EPSG" in crs or "CRS84" not in crs):
+            # Values are lat,lon order — swap to lon,lat for internal use
+            return v1, v0, v3, v2
+
+    return v0, v1, v2, v3

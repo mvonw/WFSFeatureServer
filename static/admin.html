@@ -48,10 +48,26 @@
   .layer-item .layer-name { font-weight: 500; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
   .layer-item .layer-meta { font-size: 11px; color: var(--muted); }
+  .layer-item .btn-copy-wrap { position: relative; flex-shrink: 0; }
+  .layer-item .btn-copy { background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 2px 4px; border-radius: 3px; line-height: 1;
+    font-size: 13px; }
+  .layer-item .btn-copy:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
   .layer-item .btn-del { background: none; border: none; color: var(--muted);
     cursor: pointer; padding: 2px 4px; border-radius: 3px; line-height: 1;
     font-size: 14px; flex-shrink: 0; }
   .layer-item .btn-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+  .copy-menu { position: absolute; right: 0; top: 100%; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 0;
+    z-index: 100; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+    display: none; }
+  .copy-menu.show { display: block; }
+  .copy-menu button { display: block; width: 100%; text-align: left; padding: 6px 12px;
+    background: none; border: none; color: var(--text); cursor: pointer;
+    font-size: 12px; white-space: nowrap; }
+  .copy-menu button:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .copy-menu .menu-label { font-size: 10px; color: var(--muted); padding: 4px 12px 2px;
+    text-transform: uppercase; letter-spacing: .05em; }
   #no-layers { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
 
   /* ── Main panel ── */
@@ -450,6 +466,14 @@ function renderLayerList() {
         <div class="layer-name" title="${esc(l.name)}">${esc(l.title || l.name)}</div>
         <div class="layer-meta">${l.geometry_type || '?'} &bull; ${l.feature_count} features</div>
       </div>
+      <div class="btn-copy-wrap" onclick="toggleCopyMenu(event,${l.id})">
+        <button class="btn-copy" title="Copy WFS URL">&#128279;</button>
+        <div class="copy-menu" id="copy-menu-${l.id}">
+          <div class="menu-label">Copy layer URL</div>
+          <button onclick="copyWfsUrl(event,'${esc(l.name)}',false)">WFS (read-only)</button>
+          <button onclick="copyWfsUrl(event,'${esc(l.name)}',true)">WFS-T (transactional)</button>
+        </div>
+      </div>
       <button class="btn-del" title="Delete layer" onclick="confirmDeleteLayer(event,${l.id})">×</button>`;
     li.addEventListener('click', () => selectLayer(l.id));
     ul.appendChild(li);
@@ -483,6 +507,49 @@ function updateWfsLinks() {
   const link = document.getElementById('wfs-caps-link');
   if (link) { link.href = caps; }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Copy WFS URL
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleCopyMenu(e, id) {
+  e.stopPropagation();
+  // Close any other open menus
+  document.querySelectorAll('.copy-menu.show').forEach(m => {
+    if (m.id !== 'copy-menu-' + id) m.classList.remove('show');
+  });
+  const menu = document.getElementById('copy-menu-' + id);
+  menu.classList.toggle('show');
+}
+
+function copyWfsUrl(e, layerName, includeTransaction) {
+  e.stopPropagation();
+  const base = window.location.origin + '/wfs';
+  let url;
+  if (includeTransaction) {
+    url = base + '?SERVICE=WFS&VERSION=2.0.0&TYPENAMES=' + encodeURIComponent(layerName);
+  } else {
+    url = base + '?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=' + encodeURIComponent(layerName);
+  }
+  navigator.clipboard.writeText(url).then(() => {
+    toast('URL copied to clipboard');
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('URL copied to clipboard');
+  });
+  // Close menu
+  document.querySelectorAll('.copy-menu.show').forEach(m => m.classList.remove('show'));
+}
+
+// Close copy menus when clicking elsewhere
+document.addEventListener('click', () => {
+  document.querySelectorAll('.copy-menu.show').forEach(m => m.classList.remove('show'));
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Layer modal
@@ -544,6 +611,7 @@ function switchTab(name) {
     el.style.display = name === 'preview' ? 'flex' : 'flex';
     if (name === 'preview') {
       initMap();
+      if (S.map) S.map.invalidateSize();
       refreshMap();
     }
   }

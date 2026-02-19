@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -50,6 +51,12 @@ app = FastAPI(
 )
 
 app.add_middleware(BasicAuthMiddleware, username=settings.admin_user, password=settings.admin_pass)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(wfs.router,              tags=["WFS"])
 app.include_router(admin_layers.router,     prefix="/api/admin", tags=["Admin - Layers"])
