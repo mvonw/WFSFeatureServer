@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:WFS_Capabilities
+    version="2.0.0"
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:ows="http://www.opengis.net/ows/1.1"
+    xmlns:ogc="http://www.opengis.net/ogc"
+    xmlns:fes="http://www.opengis.net/fes/2.0"
+    xmlns:gml="http://www.opengis.net/gml/3.2"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd">
+
+  <ows:ServiceIdentification>
+    <ows:Title>{{ settings.service_title }}</ows:Title>
+    <ows:Abstract>{{ settings.service_abstract }}</ows:Abstract>
+    <ows:Keywords><ows:Keyword>WFS</ows:Keyword><ows:Keyword>GIS</ows:Keyword></ows:Keywords>
+    <ows:ServiceType>WFS</ows:ServiceType>
+    <ows:ServiceTypeVersion>2.0.0</ows:ServiceTypeVersion>
+    <ows:Fees>NONE</ows:Fees>
+    <ows:AccessConstraints>NONE</ows:AccessConstraints>
+  </ows:ServiceIdentification>
+
+  <ows:ServiceProvider>
+    <ows:ProviderName>GeoFeatureService</ows:ProviderName>
+    <ows:ServiceContact/>
+  </ows:ServiceProvider>
+
+  <ows:OperationsMetadata>
+    <ows:Operation name="GetCapabilities">
+      <ows:DCP><ows:HTTP>
+        <ows:Get xlink:href="{{ service_url }}"/>
+        <ows:Post xlink:href="{{ service_url }}"/>
+      </ows:HTTP></ows:DCP>
+    </ows:Operation>
+    <ows:Operation name="DescribeFeatureType">
+      <ows:DCP><ows:HTTP>
+        <ows:Get xlink:href="{{ service_url }}"/>
+        <ows:Post xlink:href="{{ service_url }}"/>
+      </ows:HTTP></ows:DCP>
+      <ows:Parameter name="outputFormat">
+        <ows:AllowedValues>
+          <ows:Value>application/gml+xml; version=3.2</ows:Value>
+        </ows:AllowedValues>
+      </ows:Parameter>
+    </ows:Operation>
+    <ows:Operation name="GetFeature">
+      <ows:DCP><ows:HTTP>
+        <ows:Get xlink:href="{{ service_url }}"/>
+        <ows:Post xlink:href="{{ service_url }}"/>
+      </ows:HTTP></ows:DCP>
+      <ows:Parameter name="outputFormat">
+        <ows:AllowedValues>
+          <ows:Value>application/gml+xml; version=3.2</ows:Value>
+          <ows:Value>application/json</ows:Value>
+          <ows:Value>geojson</ows:Value>
+        </ows:AllowedValues>
+      </ows:Parameter>
+    </ows:Operation>
+  </ows:OperationsMetadata>
+
+  <wfs:FeatureTypeList>
+    {% for layer in layers %}
+    <wfs:FeatureType>
+      <wfs:Name>{{ layer.name }}</wfs:Name>
+      <wfs:Title>{{ layer.title }}</wfs:Title>
+      <wfs:Abstract>{{ layer.description }}</wfs:Abstract>
+      <wfs:DefaultCRS>urn:ogc:def:crs:EPSG::{{ layer.srid }}</wfs:DefaultCRS>
+      <wfs:OtherCRS>urn:ogc:def:crs:EPSG::4326</wfs:OtherCRS>
+      <ows:WGS84BoundingBox>
+        <ows:LowerCorner>{{ layer.bbox_minx if layer.bbox_minx is not none else -180 }} {{ layer.bbox_miny if layer.bbox_miny is not none else -90 }}</ows:LowerCorner>
+        <ows:UpperCorner>{{ layer.bbox_maxx if layer.bbox_maxx is not none else 180 }} {{ layer.bbox_maxy if layer.bbox_maxy is not none else 90 }}</ows:UpperCorner>
+      </ows:WGS84BoundingBox>
+    </wfs:FeatureType>
+    {% endfor %}
+  </wfs:FeatureTypeList>
+
+</wfs:WFS_Capabilities>

@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoFeatureService Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1a1d23; --surface: #242830; --surface2: #2e3340;
+    --border: #3a3f4d; --accent: #4f8ef7; --accent2: #38c172;
+    --danger: #e74c3c; --text: #e2e8f0; --muted: #8892a4;
+    --sidebar-w: 280px; --topbar-h: 52px;
+  }
+  body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* ── Topbar ── */
+  #topbar { height: var(--topbar-h); background: var(--surface);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center;
+    padding: 0 16px; gap: 16px; flex-shrink: 0; }
+  #topbar h1 { font-size: 15px; font-weight: 600; color: var(--accent); }
+  #topbar .wfs-link { font-size: 11px; color: var(--muted); }
+  #topbar .wfs-link a { color: var(--accent); text-decoration: none; }
+  #topbar .wfs-link a:hover { text-decoration: underline; }
+
+  /* ── Layout ── */
+  #layout { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  #sidebar { width: var(--sidebar-w); background: var(--surface);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    flex-shrink: 0; }
+  #sidebar-header { padding: 12px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center; }
+  #sidebar-header span { font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; color: var(--muted); flex: 1; }
+  #layer-list { flex: 1; overflow-y: auto; }
+  .layer-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; transition: background .15s; }
+  .layer-item:hover { background: var(--surface2); }
+  .layer-item.active { background: color-mix(in srgb, var(--accent) 15%, var(--surface)); }
+  .layer-item .layer-icon { width: 10px; height: 10px; border-radius: 2px;
+    background: var(--accent); flex-shrink: 0; }
+  .layer-item .layer-info { flex: 1; min-width: 0; }
+  .layer-item .layer-name { font-weight: 500; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .layer-item .layer-meta { font-size: 11px; color: var(--muted); }
+  .layer-item .btn-del { background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 2px 4px; border-radius: 3px; line-height: 1;
+    font-size: 14px; flex-shrink: 0; }
+  .layer-item .btn-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+  #no-layers { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+
+  /* ── Main panel ── */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #empty-state { flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; color: var(--muted); gap: 8px; }
+  #empty-state .big-icon { font-size: 48px; }
+
+  /* ── Tab bar ── */
+  #tab-bar { display: flex; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0; }
+  .tab-btn { padding: 12px 20px; background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Tab content ── */
+  .tab-content { flex: 1; overflow-y: auto; padding: 20px; display: none; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Buttons ── */
+  .btn { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 500; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-success { background: var(--accent2); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+  /* ── Forms ── */
+  .field-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .field-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  input[type=text], input[type=number], select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 5px; padding: 5px 8px; font-size: 12px; outline: none;
+    transition: border-color .15s; }
+  input[type=text]:focus, input[type=number]:focus, select:focus { border-color: var(--accent); }
+  input[type=color] { width: 32px; height: 28px; padding: 2px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--surface2); cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+  /* ── Drop zone ── */
+  #drop-zone { border: 2px dashed var(--border); border-radius: 10px;
+    padding: 40px 20px; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s; }
+  #drop-zone:hover, #drop-zone.over { border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #drop-zone .dz-icon { font-size: 36px; margin-bottom: 8px; }
+  #drop-zone .dz-main { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  #drop-zone .dz-sub { font-size: 12px; color: var(--muted); }
+  #drop-zone .dz-file { margin-top: 12px; font-size: 12px;
+    color: var(--accent2); font-weight: 500; }
+  #csv-opts { background: var(--surface2); border-radius: 8px; padding: 12px;
+    border: 1px solid var(--border); }
+
+  /* ── Import result ── */
+  .result-box { border-radius: 8px; padding: 12px 16px; font-size: 12px;
+    border: 1px solid; }
+  .result-box.success { border-color: var(--accent2);
+    background: color-mix(in srgb, var(--accent2) 10%, transparent); }
+  .result-box.warning { border-color: #f6c90e;
+    background: color-mix(in srgb, #f6c90e 10%, transparent); }
+  .result-box.error { border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .result-box .result-title { font-weight: 600; margin-bottom: 4px; }
+  .result-box .error-list { margin-top: 6px; max-height: 100px; overflow-y: auto;
+    font-size: 11px; color: var(--muted); }
+
+  /* ── Symbology ── */
+  #sym-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #classify-panel { background: var(--surface2); border-radius: 8px; padding: 12px;
+    border: 1px solid var(--border); }
+  #classify-panel summary { cursor: pointer; font-size: 12px; color: var(--accent);
+    font-weight: 500; user-select: none; }
+  #classify-inner { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  /* ── Rule list ── */
+  #rules-list { display: flex; flex-direction: column; gap: 4px; list-style: none; }
+  .rule-row { background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; display: flex; align-items: center;
+    gap: 6px; flex-wrap: wrap; cursor: default; }
+  .rule-row.drag-over { border-color: var(--accent); }
+  .rule-row.dragging { opacity: .4; }
+  .drag-handle { cursor: grab; color: var(--muted); padding: 0 4px; font-size: 16px;
+    user-select: none; flex-shrink: 0; }
+  .drag-handle:active { cursor: grabbing; }
+  .rule-label-field { width: 100px; }
+  .rule-field-sel { width: 110px; }
+  .rule-op-sel { width: 85px; }
+  .rule-val-field { width: 90px; }
+  .rule-opacity-field { width: 50px; }
+  .rule-sw-field { width: 42px; }
+  .rule-radius-field { width: 42px; }
+  .rule-sep { color: var(--border); font-size: 16px; }
+  .rule-default-badge { font-size: 10px; background: var(--accent);
+    color: #fff; border-radius: 3px; padding: 1px 5px; white-space: nowrap; }
+
+  /* ── Map ── */
+  #tab-preview { padding: 0 !important; }
+  #preview-bar { padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+  #preview-bar span { font-size: 12px; color: var(--muted); }
+  #map { flex: 1; }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px;
+    font-size: 12px; display: none; z-index: 9999; max-width: 300px; }
+  #toast.show { display: block; }
+
+  /* ── Modal ── */
+  #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; z-index: 1000; }
+  #modal-overlay.show { display: flex; }
+  #modal { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; width: 360px; }
+  #modal h3 { margin-bottom: 16px; font-size: 15px; }
+  #modal .modal-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  #modal .modal-field label { font-size: 11px; color: var(--muted); }
+  #modal .modal-field input { width: 100%; }
+  #modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div id="topbar">
+  <h1>GeoFeatureService</h1>
+  <div class="wfs-link">
+    WFS 2.0.0: <a id="wfs-caps-link" href="#" target="_blank">/wfs?SERVICE=WFS&amp;VERSION=2.0.0&amp;REQUEST=GetCapabilities</a>
+  </div>
+</div>
+
+<!-- Layout -->
+<div id="layout">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span>Layers</span>
+      <button class="btn btn-primary btn-sm" onclick="openNewLayerModal()">+ New</button>
+    </div>
+    <ul id="layer-list"></ul>
+    <div id="no-layers" style="display:none">No layers yet.<br>Click + New to create one.</div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main">
+    <!-- Empty state -->
+    <div id="empty-state">
+      <div class="big-icon">🗺️</div>
+      <div>Select or create a layer to get started</div>
+    </div>
+
+    <!-- Active layer panel (hidden until layer selected) -->
+    <div id="layer-panel" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
+      <nav id="tab-bar">
+        <button class="tab-btn active" data-tab="import">Import</button>
+        <button class="tab-btn" data-tab="symbology">Symbology</button>
+        <button class="tab-btn" data-tab="preview">Map Preview</button>
+      </nav>
+
+      <!-- Import tab -->
+      <section id="tab-import" class="tab-content active">
+        <div id="drop-zone">
+          <div class="dz-icon">📂</div>
+          <div class="dz-main">Drop file here or click to browse</div>
+          <div class="dz-sub">GeoJSON &bull; Shapefile .zip &bull; GeoPackage .gpkg &bull; CSV</div>
+          <div class="dz-file" id="dz-filename"></div>
+          <input type="file" id="file-input" accept=".geojson,.json,.zip,.gpkg,.csv" style="display:none">
+        </div>
+
+        <div id="csv-opts" style="display:none">
+          <div class="field-row">
+            <label>Latitude column:</label>
+            <input type="text" id="lat-field" placeholder="latitude" style="width:140px">
+            <label>Longitude column:</label>
+            <input type="text" id="lon-field" placeholder="longitude" style="width:140px">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Source EPSG:</label>
+          <input type="number" id="srid-input" value="4326" style="width:80px">
+          <label><input type="checkbox" id="replace-cb"> Replace existing features</label>
+        </div>
+
+        <div class="field-row">
+          <button class="btn btn-primary" onclick="doImport()" id="import-btn">Import</button>
+          <span id="import-status" style="font-size:12px; color:var(--muted)"></span>
+        </div>
+
+        <div id="import-result" style="display:none"></div>
+      </section>
+
+      <!-- Symbology tab -->
+      <section id="tab-symbology" class="tab-content">
+        <div id="sym-toolbar">
+          <button class="btn btn-secondary btn-sm" onclick="addRule(false)">+ Add Rule</button>
+          <button class="btn btn-secondary btn-sm" onclick="addRule(true)">+ Add Default Rule</button>
+          <button class="btn btn-success btn-sm" onclick="saveRules()">💾 Save Rules</button>
+        </div>
+
+        <details id="classify-panel">
+          <summary>⚡ Auto-classify by attribute</summary>
+          <div id="classify-inner">
+            <div class="field-row">
+              <label>Field:</label>
+              <select id="classify-field" style="width:140px"></select>
+            </div>
+            <div class="field-row">
+              <label>Method:</label>
+              <select id="classify-method" style="width:130px">
+                <option value="unique">Unique Values</option>
+                <option value="equal_interval">Equal Interval</option>
+                <option value="quantile">Quantile</option>
+              </select>
+              <label>Classes:</label>
+              <input type="number" id="classify-count" value="5" min="2" max="20" style="width:55px">
+            </div>
+            <div class="field-row">
+              <label>Color ramp:</label>
+              <select id="classify-ramp" style="width:130px">
+                <option value="blues">Blues</option>
+                <option value="reds">Reds</option>
+                <option value="greens">Greens</option>
+                <option value="oranges">Oranges</option>
+                <option value="spectral">Spectral</option>
+                <option value="viridis">Viridis</option>
+                <option value="plasma">Plasma</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="autoClassify()">Generate</button>
+            </div>
+          </div>
+        </details>
+
+        <ul id="rules-list"></ul>
+      </section>
+
+      <!-- Preview tab -->
+      <section id="tab-preview" class="tab-content" style="display:none; flex-direction:column;">
+        <div id="preview-bar">
+          <button class="btn btn-secondary btn-sm" onclick="refreshMap()">↺ Refresh</button>
+          <label><input type="checkbox" id="apply-sym-cb" checked> Apply symbology</label>
+          <span id="preview-count"></span>
+        </div>
+        <div id="map"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- Modal for new layer -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>New Layer</h3>
+    <div class="modal-field">
+      <label>Name (machine-safe, used in WFS)</label>
+      <input type="text" id="modal-name" placeholder="my_layer" pattern="[A-Za-z0-9_\-]+">
+    </div>
+    <div class="modal-field">
+      <label>Title (display name)</label>
+      <input type="text" id="modal-title" placeholder="My Layer">
+    </div>
+    <div class="modal-field">
+      <label>Description (optional)</label>
+      <input type="text" id="modal-desc" placeholder="">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createLayer()">Create</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+const S = {
+  layers: [],
+  activeId: null,
+  rules: [],
+  previewData: null,
+  map: null,
+  mapLayer: null,
+  pendingFile: null,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────────────────────────────────────
+function getAuth() {
+  let token = sessionStorage.getItem('gfs_auth');
+  if (!token) {
+    const u = window.prompt('Admin username:', 'admin') || 'admin';
+    const p = window.prompt('Admin password:', '') || '';
+    token = btoa(u + ':' + p);
+    sessionStorage.setItem('gfs_auth', token);
+  }
+  return 'Basic ' + token;
+}
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Authorization': getAuth(),
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    sessionStorage.removeItem('gfs_auth');
+    toast('Authentication failed — please reload and try again.', true);
+    throw new Error('Unauthorized');
+  }
+  return res;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API helpers
+// ─────────────────────────────────────────────────────────────────────────────
+const api = {
+  async getLayers() {
+    const r = await apiFetch('/api/admin/layers');
+    return r.json();
+  },
+  async createLayer(data) {
+    const r = await apiFetch('/api/admin/layers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return r.json();
+  },
+  async deleteLayer(id) {
+    return apiFetch(`/api/admin/layers/${id}`, { method: 'DELETE' });
+  },
+  async importFile(id, formData) {
+    const r = await apiFetch(`/api/admin/layers/${id}/import`, {
+      method: 'POST', body: formData,
+    });
+    return r.json();
+  },
+  async getRules(id) {
+    const r = await apiFetch(`/api/admin/layers/${id}/symbology`);
+    return r.json();
+  },
+  async saveRules(id, rules) {
+    const r = await apiFetch(`/api/admin/layers/${id}/symbology`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rules),
+    });
+    return r.json();
+  },
+  async getPreview(id) {
+    const r = await apiFetch(`/api/admin/layers/${id}/features/preview?max=2000`);
+    return r.json();
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer list
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadLayers() {
+  try {
+    S.layers = await api.getLayers();
+  } catch { S.layers = []; }
+  renderLayerList();
+}
+
+function renderLayerList() {
+  const ul = document.getElementById('layer-list');
+  const none = document.getElementById('no-layers');
+  ul.innerHTML = '';
+  if (!S.layers.length) {
+    none.style.display = '';
+    return;
+  }
+  none.style.display = 'none';
+  S.layers.forEach(l => {
+    const li = document.createElement('li');
+    li.className = 'layer-item' + (l.id === S.activeId ? ' active' : '');
+    li.dataset.id = l.id;
+    li.innerHTML = `
+      <div class="layer-icon" style="background:${layerColor(l.id)}"></div>
+      <div class="layer-info">
+        <div class="layer-name" title="${esc(l.name)}">${esc(l.title || l.name)}</div>
+        <div class="layer-meta">${l.geometry_type || '?'} &bull; ${l.feature_count} features</div>
+      </div>
+      <button class="btn-del" title="Delete layer" onclick="confirmDeleteLayer(event,${l.id})">×</button>`;
+    li.addEventListener('click', () => selectLayer(l.id));
+    ul.appendChild(li);
+  });
+}
+
+function layerColor(id) {
+  const palette = ['#4f8ef7','#38c172','#f7a14f','#e74c3c','#a855f7','#06b6d4','#f59e0b'];
+  return palette[id % palette.length];
+}
+
+async function selectLayer(id) {
+  S.activeId = id;
+  renderLayerList();
+  document.getElementById('empty-state').style.display = 'none';
+  const panel = document.getElementById('layer-panel');
+  panel.style.display = 'flex';
+  // Load rules
+  try { S.rules = await api.getRules(id); } catch { S.rules = []; }
+  renderRules();
+  populateClassifyFields();
+  // Switch to import tab
+  switchTab('import');
+  updateWfsLinks();
+}
+
+function updateWfsLinks() {
+  const layer = S.layers.find(l => l.id === S.activeId);
+  const base = window.location.origin + '/wfs?SERVICE=WFS&VERSION=2.0.0';
+  const caps = base + '&REQUEST=GetCapabilities';
+  const link = document.getElementById('wfs-caps-link');
+  if (link) { link.href = caps; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer modal
+// ─────────────────────────────────────────────────────────────────────────────
+function openNewLayerModal() {
+  document.getElementById('modal-name').value = '';
+  document.getElementById('modal-title').value = '';
+  document.getElementById('modal-desc').value = '';
+  document.getElementById('modal-overlay').classList.add('show');
+  document.getElementById('modal-name').focus();
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+async function createLayer() {
+  const name = document.getElementById('modal-name').value.trim();
+  const title = document.getElementById('modal-title').value.trim();
+  const desc = document.getElementById('modal-desc').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  if (!/^[A-Za-z0-9_\-]+$/.test(name)) { alert('Name must be alphanumeric, underscores and hyphens only'); return; }
+  try {
+    await api.createLayer({ name, title: title || name, description: desc });
+    closeModal();
+    await loadLayers();
+    const l = S.layers.find(x => x.name === name);
+    if (l) selectLayer(l.id);
+    toast('Layer created: ' + name);
+  } catch(e) {
+    toast('Error creating layer: ' + e.message, true);
+  }
+}
+
+async function confirmDeleteLayer(e, id) {
+  e.stopPropagation();
+  const layer = S.layers.find(l => l.id === id);
+  if (!confirm(`Delete layer "${layer?.title || layer?.name}"? This will remove all features.`)) return;
+  await api.deleteLayer(id);
+  if (S.activeId === id) {
+    S.activeId = null;
+    document.getElementById('empty-state').style.display = '';
+    document.getElementById('layer-panel').style.display = 'none';
+  }
+  await loadLayers();
+  toast('Layer deleted.');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tabs
+// ─────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = 'none';
+  });
+  const el = document.getElementById('tab-' + name);
+  if (el) {
+    el.classList.add('active');
+    el.style.display = name === 'preview' ? 'flex' : 'flex';
+    if (name === 'preview') {
+      initMap();
+      refreshMap();
+    }
+  }
+}
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Import
+// ─────────────────────────────────────────────────────────────────────────────
+const dz = document.getElementById('drop-zone');
+const fi = document.getElementById('file-input');
+
+dz.addEventListener('click', () => fi.click());
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) setFile(file);
+});
+fi.addEventListener('change', () => { if (fi.files[0]) setFile(fi.files[0]); });
+
+function setFile(file) {
+  S.pendingFile = file;
+  document.getElementById('dz-filename').textContent = '📄 ' + file.name;
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+  document.getElementById('csv-opts').style.display = isCsv ? '' : 'none';
+}
+
+async function doImport() {
+  if (!S.activeId) return toast('Select a layer first.', true);
+  if (!S.pendingFile) return toast('Drop or select a file first.', true);
+  const btn = document.getElementById('import-btn');
+  const status = document.getElementById('import-status');
+  btn.disabled = true;
+  status.textContent = 'Importing…';
+  const fd = new FormData();
+  fd.append('file', S.pendingFile);
+  fd.append('srid', document.getElementById('srid-input').value || '4326');
+  fd.append('replace_existing', document.getElementById('replace-cb').checked ? 'true' : 'false');
+  const lf = document.getElementById('lat-field').value.trim();
+  const lnf = document.getElementById('lon-field').value.trim();
+  if (lf) fd.append('lat_field', lf);
+  if (lnf) fd.append('lon_field', lnf);
+
+  try {
+    const result = await api.importFile(S.activeId, fd);
+    showImportResult(result);
+    await loadLayers();
+    renderLayerList();
+    S.rules = await api.getRules(S.activeId);
+    renderRules();
+    populateClassifyFields();
+  } catch(e) {
+    showImportResult({ features_imported: 0, features_failed: 0, errors: [e.message], bbox: null });
+  }
+  btn.disabled = false;
+  status.textContent = '';
+}
+
+function showImportResult(r) {
+  const box = document.getElementById('import-result');
+  box.style.display = '';
+  const hasErrors = r.errors && r.errors.length;
+  const cls = r.features_imported > 0 ? (hasErrors ? 'warning' : 'success') : 'error';
+  const errHtml = hasErrors
+    ? `<div class="error-list">${r.errors.slice(0,20).map(e => `<div>⚠ ${esc(e)}</div>`).join('')}</div>`
+    : '';
+  box.innerHTML = `<div class="result-box ${cls}">
+    <div class="result-title">${r.features_imported} feature(s) imported, ${r.features_failed} failed</div>
+    ${r.bbox ? `<div>Extent: [${r.bbox.map(n => n.toFixed(4)).join(', ')}]</div>` : ''}
+    ${errHtml}
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Symbology
+// ─────────────────────────────────────────────────────────────────────────────
+function activeLayer() {
+  return S.layers.find(l => l.id === S.activeId);
+}
+
+function populateClassifyFields() {
+  const layer = activeLayer();
+  const sel = document.getElementById('classify-field');
+  sel.innerHTML = '';
+  if (!layer || !layer.attribute_schema) return;
+  Object.keys(layer.attribute_schema).forEach(f => {
+    const o = document.createElement('option');
+    o.value = f; o.textContent = f;
+    sel.appendChild(o);
+  });
+}
+
+function renderRules() {
+  const ul = document.getElementById('rules-list');
+  ul.innerHTML = '';
+  const layer = activeLayer();
+  const fields = layer ? Object.keys(layer.attribute_schema || {}) : [];
+
+  S.rules.forEach((rule, idx) => {
+    ul.appendChild(buildRuleRow(rule, idx, fields));
+  });
+  initDragSort();
+}
+
+function buildRuleRow(rule, idx, fields) {
+  const li = document.createElement('li');
+  li.className = 'rule-row';
+  li.dataset.idx = idx;
+  li.draggable = true;
+
+  const fieldOpts = fields.map(f => `<option value="${esc(f)}" ${rule.filter_field === f ? 'selected' : ''}>${esc(f)}</option>`).join('');
+  const ops = ['eq','neq','gt','gte','lt','lte','contains','in','is_null'];
+  const opOpts = ops.map(o => `<option value="${o}" ${rule.filter_operator === o ? 'selected' : ''}>${o}</option>`).join('');
+
+  li.innerHTML = `
+    <span class="drag-handle">⠿</span>
+    <input type="color" class="r-fill" value="${rule.fill_color || '#3388ff'}" title="Fill color">
+    <input type="color" class="r-stroke" value="${rule.stroke_color || '#ffffff'}" title="Stroke color">
+    <input type="text" class="r-label rule-label-field" placeholder="Label" value="${esc(rule.label || '')}">
+    <span class="rule-sep">|</span>
+    <select class="r-field rule-field-sel" title="Filter field">
+      <option value="">-- any --</option>${fieldOpts}
+    </select>
+    <select class="r-op rule-op-sel" title="Operator">${opOpts}</select>
+    <input type="text" class="r-val rule-val-field" placeholder="value" value="${esc(rule.filter_value || '')}">
+    <span class="rule-sep">|</span>
+    <label title="Fill opacity">α <input type="number" class="r-opacity rule-opacity-field" value="${rule.fill_opacity ?? 0.6}" min="0" max="1" step="0.1"></label>
+    <label title="Stroke width">w <input type="number" class="r-sw rule-sw-field" value="${rule.stroke_width ?? 1.5}" min="0" max="50" step="0.5"></label>
+    <label title="Point radius">r <input type="number" class="r-radius rule-radius-field" value="${rule.point_radius ?? 6}" min="1" max="100" step="1"></label>
+    ${rule.is_default ? '<span class="rule-default-badge">DEFAULT</span>' : ''}
+    <input type="hidden" class="r-is-default" value="${rule.is_default ? '1' : '0'}">
+    <button class="btn btn-danger btn-sm" onclick="removeRuleRow(this)">×</button>`;
+  return li;
+}
+
+function addRule(isDefault) {
+  const layer = activeLayer();
+  const fields = layer ? Object.keys(layer.attribute_schema || {}) : [];
+  const newRule = {
+    rule_order: S.rules.length,
+    label: isDefault ? 'Default' : '',
+    filter_field: null, filter_operator: 'eq', filter_value: null,
+    fill_color: '#3388ff', fill_opacity: 0.6,
+    stroke_color: '#ffffff', stroke_width: 1.5, point_radius: 6.0,
+    is_default: isDefault,
+  };
+  S.rules.push(newRule);
+  const ul = document.getElementById('rules-list');
+  ul.appendChild(buildRuleRow(newRule, S.rules.length - 1, fields));
+  initDragSort();
+}
+
+function removeRuleRow(btn) {
+  btn.closest('.rule-row').remove();
+}
+
+function collectRules() {
+  const rows = document.querySelectorAll('#rules-list .rule-row');
+  return Array.from(rows).map((row, i) => ({
+    rule_order: i,
+    label: row.querySelector('.r-label').value,
+    filter_field: row.querySelector('.r-field').value || null,
+    filter_operator: row.querySelector('.r-op').value,
+    filter_value: row.querySelector('.r-val').value || null,
+    fill_color: row.querySelector('.r-fill').value,
+    fill_opacity: parseFloat(row.querySelector('.r-opacity').value),
+    stroke_color: row.querySelector('.r-stroke').value,
+    stroke_width: parseFloat(row.querySelector('.r-sw').value),
+    point_radius: parseFloat(row.querySelector('.r-radius').value),
+    is_default: row.querySelector('.r-is-default').value === '1',
+  }));
+}
+
+async function saveRules() {
+  if (!S.activeId) return;
+  const rules = collectRules();
+  try {
+    S.rules = await api.saveRules(S.activeId, rules);
+    renderRules();
+    toast('Symbology saved ✓');
+  } catch(e) {
+    toast('Error saving rules: ' + e.message, true);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drag-to-reorder rules
+// ─────────────────────────────────────────────────────────────────────────────
+function initDragSort() {
+  const ul = document.getElementById('rules-list');
+  let dragSrc = null;
+
+  ul.querySelectorAll('.rule-row').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragSrc = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      dragSrc = null;
+      ul.querySelectorAll('.rule-row').forEach(r => r.classList.remove('dragging','drag-over'));
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (row !== dragSrc) {
+        ul.querySelectorAll('.rule-row').forEach(r => r.classList.remove('drag-over'));
+        row.classList.add('drag-over');
+      }
+    });
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrc && dragSrc !== row) {
+        const rows = Array.from(ul.querySelectorAll('.rule-row'));
+        const srcIdx = rows.indexOf(dragSrc);
+        const dstIdx = rows.indexOf(row);
+        if (srcIdx < dstIdx) {
+          ul.insertBefore(dragSrc, row.nextSibling);
+        } else {
+          ul.insertBefore(dragSrc, row);
+        }
+      }
+      ul.querySelectorAll('.rule-row').forEach(r => r.classList.remove('drag-over'));
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-classify
+// ─────────────────────────────────────────────────────────────────────────────
+const COLOR_RAMPS = {
+  blues:    ['#deebf7','#c6dbef','#9ecae1','#6baed6','#4292c6','#2171b5','#08519c','#08306b'],
+  reds:     ['#fee5d9','#fcbba1','#fc9272','#fb6a4a','#ef3b2c','#cb181d','#99000d','#67000d'],
+  greens:   ['#e5f5e0','#c7e9c0','#a1d99b','#74c476','#41ab5d','#238b45','#006d2c','#00441b'],
+  oranges:  ['#feedde','#fdd0a2','#fdae6b','#fd8d3c','#f16913','#d94801','#a63603','#7f2704'],
+  spectral: ['#d53e4f','#f46d43','#fdae61','#fee08b','#e6f598','#abdda4','#66c2a5','#3288bd'],
+  viridis:  ['#440154','#482878','#3e4989','#31688e','#26828e','#1f9e89','#35b779','#b5de2b'],
+  plasma:   ['#0d0887','#46039f','#7201a8','#9c179e','#bd3786','#d8576b','#ed7953','#fca636'],
+};
+
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+  const rr = Math.round(ar + (br - ar) * t);
+  const rg = Math.round(ag + (bg - ag) * t);
+  const rb = Math.round(ab + (bb - ab) * t);
+  return '#' + [rr, rg, rb].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function getRampColor(ramp, t) {
+  const stops = COLOR_RAMPS[ramp] || COLOR_RAMPS.blues;
+  const scaled = t * (stops.length - 1);
+  const lo = Math.floor(scaled), hi = Math.min(lo + 1, stops.length - 1);
+  return lerpColor(stops[lo], stops[hi], scaled - lo);
+}
+
+async function autoClassify() {
+  if (!S.activeId) return toast('Select a layer first.', true);
+  const field = document.getElementById('classify-field').value;
+  if (!field) return toast('Select a field.', true);
+  const method = document.getElementById('classify-method').value;
+  const nClass = parseInt(document.getElementById('classify-count').value) || 5;
+  const ramp = document.getElementById('classify-ramp').value;
+
+  // Fetch preview data for classification
+  let geojson;
+  try {
+    geojson = await api.getPreview(S.activeId);
+  } catch(e) {
+    return toast('Could not load features for classification.', true);
+  }
+
+  const values = geojson.features
+    .map(f => f.properties && f.properties[field])
+    .filter(v => v !== null && v !== undefined && v !== '');
+
+  if (!values.length) return toast(`No values found for field "${field}".`, true);
+
+  let rules = [];
+  if (method === 'unique') {
+    const unique = [...new Set(values.map(String))].slice(0, nClass);
+    rules = unique.map((v, i) => ({
+      label: `${field} = ${v}`,
+      filter_field: field, filter_operator: 'eq', filter_value: v,
+      fill_color: getRampColor(ramp, unique.length === 1 ? 0.5 : i / (unique.length - 1)),
+      fill_opacity: 0.7, stroke_color: '#ffffff', stroke_width: 1.5, point_radius: 6,
+      is_default: false,
+    }));
+  } else {
+    const nums = values.map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+    if (!nums.length) return toast('Cannot classify: no numeric values for this field.', true);
+    let breaks;
+    if (method === 'equal_interval') {
+      const min = nums[0], max = nums[nums.length - 1];
+      const step = (max - min) / nClass;
+      breaks = Array.from({length: nClass + 1}, (_, i) => min + i * step);
+    } else { // quantile
+      breaks = [nums[0]];
+      for (let i = 1; i <= nClass; i++) {
+        const idx = Math.round((i / nClass) * (nums.length - 1));
+        breaks.push(nums[idx]);
+      }
+    }
+    rules = [];
+    for (let i = 0; i < nClass; i++) {
+      const lo = breaks[i], hi = breaks[i + 1];
+      rules.push({
+        label: `${field}: ${lo.toFixed(2)} – ${hi.toFixed(2)}`,
+        filter_field: field,
+        filter_operator: i === nClass - 1 ? 'lte' : 'lt',
+        filter_value: String(hi),
+        fill_color: getRampColor(ramp, nClass === 1 ? 0.5 : i / (nClass - 1)),
+        fill_opacity: 0.7, stroke_color: '#ffffff', stroke_width: 1.5, point_radius: 6,
+        is_default: false,
+      });
+      // Add gte for lower bound on first class
+      if (i === 0) rules[0].filter_operator = 'gte';
+    }
+    // Use range: add gte lower AND lte upper per class via nested logic in default approach
+    // Simpler: keep single operator (gte for last, lt for rest) - close enough for ranges
+  }
+
+  // Add a default fallback
+  rules.push({
+    label: 'Other', filter_field: null, filter_operator: 'eq', filter_value: null,
+    fill_color: '#aaaaaa', fill_opacity: 0.4, stroke_color: '#888888',
+    stroke_width: 1.0, point_radius: 4, is_default: true,
+  });
+
+  // Replace rule list UI
+  S.rules = rules;
+  renderRules();
+  toast(`Generated ${rules.length} rules for "${field}".`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Map preview
+// ─────────────────────────────────────────────────────────────────────────────
+function initMap() {
+  if (S.map) return;
+  S.map = L.map('map').setView([20, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(S.map);
+}
+
+async function refreshMap() {
+  if (!S.map || !S.activeId) return;
+  const status = document.getElementById('preview-count');
+  status.textContent = 'Loading…';
+  if (S.mapLayer) { S.map.removeLayer(S.mapLayer); S.mapLayer = null; }
+
+  let geojson;
+  try {
+    geojson = await api.getPreview(S.activeId);
+  } catch(e) {
+    status.textContent = 'Error loading features.';
+    return;
+  }
+
+  const applySym = document.getElementById('apply-sym-cb').checked;
+  const rules = applySym ? (collectRules().length ? collectRules() : S.rules) : [];
+  const layer = activeLayer();
+  const isPoint = layer && (layer.geometry_type === 'Point' || layer.geometry_type === 'MultiPoint');
+
+  S.mapLayer = L.geoJSON(geojson, {
+    style: feat => {
+      const style = applySymbology(rules, feat.properties || {});
+      return {
+        color: style.stroke_color,
+        weight: style.stroke_width,
+        fillColor: style.fill_color,
+        fillOpacity: style.fill_opacity,
+        opacity: 1,
+      };
+    },
+    pointToLayer: (feat, latlng) => {
+      const style = applySymbology(rules, feat.properties || {});
+      return L.circleMarker(latlng, {
+        radius: style.point_radius,
+        fillColor: style.fill_color,
+        fillOpacity: style.fill_opacity,
+        color: style.stroke_color,
+        weight: style.stroke_width,
+      });
+    },
+    onEachFeature: (feat, lyr) => {
+      const props = feat.properties || {};
+      const rows = Object.entries(props)
+        .map(([k, v]) => `<tr><td style="padding:2px 6px;color:#8892a4">${esc(k)}</td><td style="padding:2px 6px">${esc(String(v ?? ''))}</td></tr>`)
+        .join('');
+      if (rows) lyr.bindPopup(`<table style="font-size:12px;border-collapse:collapse">${rows}</table>`);
+    },
+  }).addTo(S.map);
+
+  const count = geojson.features ? geojson.features.length : 0;
+  status.textContent = `${count} feature(s) shown`;
+
+  try {
+    const bounds = S.mapLayer.getBounds();
+    if (bounds.isValid()) S.map.fitBounds(bounds.pad(0.1));
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Symbology evaluation (mirrors server-side logic)
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_STYLE = { fill_color:'#3388ff', fill_opacity:0.6, stroke_color:'#ffffff', stroke_width:1.5, point_radius:6 };
+
+function applySymbology(rules, props) {
+  if (!rules || !rules.length) return DEFAULT_STYLE;
+  const sorted = [...rules].sort((a, b) => (a.rule_order || 0) - (b.rule_order || 0));
+  const defRule = sorted.find(r => r.is_default);
+  for (const r of sorted) {
+    if (r.is_default) continue;
+    if (ruleMatches(r, props)) return ruleToStyle(r);
+  }
+  return defRule ? ruleToStyle(defRule) : DEFAULT_STYLE;
+}
+
+function ruleMatches(rule, props) {
+  if (!rule.filter_field) return true;
+  const val = props[rule.filter_field];
+  const rv = rule.filter_value;
+  switch (rule.filter_operator) {
+    case 'eq':       return String(val) === String(rv);
+    case 'neq':      return String(val) !== String(rv);
+    case 'gt':       return Number(val) > Number(rv);
+    case 'gte':      return Number(val) >= Number(rv);
+    case 'lt':       return Number(val) < Number(rv);
+    case 'lte':      return Number(val) <= Number(rv);
+    case 'contains': return String(val).includes(String(rv));
+    case 'in':       try { return JSON.parse(rv || '[]').map(String).includes(String(val)); } catch { return false; }
+    case 'is_null':  return val === null || val === undefined || val === '';
+    default:         return false;
+  }
+}
+
+function ruleToStyle(r) {
+  return {
+    fill_color: r.fill_color || '#3388ff',
+    fill_opacity: r.fill_opacity ?? 0.6,
+    stroke_color: r.stroke_color || '#ffffff',
+    stroke_width: r.stroke_width ?? 1.5,
+    point_radius: r.point_radius ?? 6,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, isErr = false) {
+  const el = document.getElementById('toast');
+  el.textContent = (isErr ? '⚠ ' : '✓ ') + msg;
+  el.style.borderColor = isErr ? 'var(--danger)' : 'var(--accent2)';
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// Enter key on modal
+document.getElementById('modal-desc').addEventListener('keydown', e => { if(e.key==='Enter') createLayer(); });
+document.getElementById('modal-title').addEventListener('keydown', e => { if(e.key==='Enter') createLayer(); });
+document.getElementById('modal-name').addEventListener('keydown', e => { if(e.key==='Enter') createLayer(); });
+document.getElementById('modal-overlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeModal(); });
+
+// Set WFS link
+document.getElementById('wfs-caps-link').href =
+  window.location.origin + '/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+loadLayers();
+</script>
+</body>
+</html>

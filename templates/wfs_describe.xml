@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:gml="http://www.opengis.net/gml/3.2"
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    elementFormDefault="qualified"
+    version="2.0.0">
+
+  <xsd:import namespace="http://www.opengis.net/gml/3.2"
+              schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>
+
+  {% for layer in layers %}
+  <xsd:element name="{{ layer.name }}"
+               type="{{ layer.name }}Type"
+               substitutionGroup="gml:AbstractFeature"/>
+
+  <xsd:complexType name="{{ layer.name }}Type">
+    <xsd:complexContent>
+      <xsd:extension base="gml:AbstractFeatureType">
+        <xsd:sequence>
+          <xsd:element name="geometry"
+                       type="{{ layer|gml_geom_type }}"
+                       minOccurs="0" maxOccurs="1"/>
+          {% for field_name, field_type in layer.attribute_schema.items() %}
+          <xsd:element name="{{ field_name }}"
+                       type="{{ field_type|xsd_type }}"
+                       nillable="true"
+                       minOccurs="0" maxOccurs="1"/>
+          {% endfor %}
+        </xsd:sequence>
+      </xsd:extension>
+    </xsd:complexContent>
+  </xsd:complexType>
+  {% endfor %}
+
+</xsd:schema>
